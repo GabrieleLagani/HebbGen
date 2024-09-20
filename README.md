@@ -1,7 +1,6 @@
-# Hebbian CNN Demo
+# HebbGen
 
-This repository aims at providing a quick demo code for Hebbian learning 
-experiments with CNNs.
+End-to-end Hebbian training of generative models with encoding-decoding branches.
 
 Usage:  
 `python demo.py --device <device>`  
