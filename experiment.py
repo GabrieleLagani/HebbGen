@@ -28,8 +28,9 @@ def run(exp_name, dataset='cifar10', pretrained_model=None, whiten_lvl=None, bat
 	trn_set, tst_set, zca = data.get_data(dataset=dataset, root='datasets', batch_size=batch_size, whiten_lvl=whiten_lvl)
 	
 	model = Net(hebb_params=hebb_params)
-	if pretrained_model is not None: model.load_state_dict(utils.load_dict(pretrained_model))
+	if pretrained_model is not None: model.load_state_dict(utils.load_dict(pretrained_model), strict=False)
 	model.to(device=device)
+	model.init_inv_weights()
 	
 	criterion = nn.CrossEntropyLoss()
 	def mse(x, y):
@@ -70,7 +71,7 @@ def run(exp_name, dataset='cifar10', pretrained_model=None, whiten_lvl=None, bat
 			loss = (1 - elbo_weight) * criterion(outputs, labels) + elbo_weight * elbo(features['y'], model._resize_as(features['x'], features['y']), features['mu'], features['lv'])
 			if torch.any(torch.isnan(loss)):
 				nan_params = [n for n, p in model.named_parameters() if torch.any(torch.isnan(p))]
-				raise RuntimeError("Loss is nan. The following params were found to be nan: {}",format(nan_params))
+				raise RuntimeError("Loss is nan. The following params were found to be nan: {}".format(nan_params))
 			epoch_loss += loss.sum().item()
 			epoch_hits += (torch.max(outputs, dim=1)[1] == labels).int().sum().item()
 			epoch_sqerr += mse(features['y'], model._resize_as(features['x'], features['y'])).sum().item()

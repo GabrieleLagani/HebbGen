@@ -87,17 +87,22 @@ class HebbianConv2d(nn.Module):
 		r = -((y) - ((t if t is not None else 0.)))
 		return r
 	
-	def compute_update(self, x, y, t=None, mult=1):
+	def compute_update(self, x, y, t=None, t_x=None, mult=1):
 		"""
 		This function implements the logic that computes local plasticity rules from input x and output y. The
 		resulting weight update is stored in buffer self.delta_w for later use.
 		"""
 		
-		if self.alpha == 0.: return
+		#if self.alpha == 0.: return
 		
 		if self.mode not in [self.MODE_GRAD, self.MODE_SWTA, self.MODE_HPCA, self.MODE_CONTRASTIVE]:
 			raise NotImplementedError("Learning mode {} unavailable for {} layer".format(self.mode, self.__class__.__name__))
-		
+
+		with torch.no_grad():
+			if t_x is not None:
+				if t is None: t = self.compute_activation(t_x)
+				else: t = (self.compute_activation(t_x) + t) / 2
+
 		if self.mode == self.MODE_GRAD:
 			with torch.no_grad():
 				# Logic for vanilla learning
@@ -108,10 +113,7 @@ class HebbianConv2d(nn.Module):
 				r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
 				c = r.abs()/r_sum
 				cr = r #* c
-				if self.patchwise:
-					self.delta_w += mult * (cr.reshape(r.shape[0], -1).matmul(x_unf)).reshape_as(self.weight)
-				else:
-					self.delta_w += mult * (cr.reshape(r.shape[0], -1).matmul(x_unf)).reshape_as(self.weight)
+				self.delta_w += mult * (cr.reshape(r.shape[0], -1).matmul(x_unf)).reshape_as(self.weight)
 		
 		if self.mode == self.MODE_SWTA:
 			with torch.no_grad():
@@ -179,7 +181,11 @@ class HebbianConv2d(nn.Module):
 			L.backward()
 			self.delta_w += mult * self.weight.grad.clone().detach()
 			self.weight.grad = prev_grad
-	
+
+	@torch.no_grad()
+	def norm_update(self, eps=1e-4):
+		self.delta_w = self.delta_w / (self.delta_w.pow(2).sum(dim=(1, 2, 3), keepdim=True) + eps)
+
 	@torch.no_grad()
 	def local_update(self):
 		"""
@@ -249,8 +255,12 @@ class HebbianConvTranspose2d(HebbianConv2d):
 		if self.w_nrm: w = normalize(w, dim=(1, 2, 3))
 		y = torch.conv2d(x - self.bias.reshape(1, -1, 1, 1), w, stride=self.stride)
 		return y
-	
-	def compute_update(self, x, y, t=None, mult=1):
+
+	@torch.no_grad()
+	def norm_update(self, eps=1e-4):
+		self.delta_w = self.delta_w / (self.delta_w.pow(2).sum(dim=(0, 2, 3), keepdim=True).pow(0.5) + eps)
+
+	def compute_update(self, x, y, t=None, t_x=None, mult=1):
 		"""
 		This function implements the logic that computes local plasticity rules from input x and output y. The
 		resulting weight update is stored in buffer self.delta_w for later use.
@@ -258,19 +268,27 @@ class HebbianConvTranspose2d(HebbianConv2d):
 		
 		if self.mode not in [self.MODE_GRAD, self.MODE_SWTA, self.MODE_HPCA, self.MODE_GRAD_T, self.MODE_SWTA_T, self.MODE_HPCA_T, self.MODE_CONTRASTIVE]:
 			raise NotImplementedError("Learning mode {} unavailable for {} layer".format(self.mode, self.__class__.__name__))
-		
+
 		if self.mode in [self.MODE_GRAD, self.MODE_SWTA, self.MODE_HPCA]:
 			# In case of swta-type or hpca-type learning, use the learning rules for ordinary convolution,
 			# but exchanging x and y
-			#t = self.rev_weights(t - self.bias.reshape(1, -1, 1, 1)) if t is not None else None
-			super().compute_update(y, x, t)
-		
+			with torch.non_grad():
+				if t is not None:
+					if t_x is None: t_x = self.rev_weights(t - self.bias.reshape(1, -1, 1, 1))
+					else: t_x = (self.rev_weights(t - self.bias.reshape(1, -1, 1, 1)) + t_x) / 2
+			super().compute_update(y, x, t=t_x, t_x=None, mult=mult)
+
 		#t = self.compute_activation(t) if t is not None else None
 		
 		if self.mode in [self.MODE_CONTRASTIVE]:
 			# Reuse update from base conv class
-			super().compute_update(x, y, t)
-		
+			super().compute_update(x, y, t=t, t_x=t_x, mult=mult)
+
+		with torch.no_grad():
+			if t_x is not None:
+				if t is None: t = self.compute_activation(t_x)
+				else: t = (self.compute_activation(t_x) + t) / 2
+
 		if self.mode == self.MODE_GRAD_T:
 			with torch.no_grad():
 				# Logic for vanilla learning in transpose convolutional layers

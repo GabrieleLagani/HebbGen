@@ -2,11 +2,12 @@ import os
 import torch
 import torch.nn as nn
 
+import utils
 from experiment import run
 
 
 DATASET = 'cifar10'
-PRETRAINED_MODEL = None
+PRETRAINED_MODEL = None #'assets/pretrained.pt'
 WHITEN_LVL = None
 BATCH_SIZE = 64
 EPOCHS = 10
@@ -21,6 +22,7 @@ HEBB_PARAMS = {'mode': 'grad_t', 'w_nrm': False, 'bias': False, 'act': nn.Identi
 
 
 if __name__ == '__main__':
+	utils.set_rng_seed(0)
 	run(
 		exp_name=os.path.basename(__file__).rsplit('.', 1)[0],
 		dataset=DATASET,

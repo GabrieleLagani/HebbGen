@@ -1,7 +1,19 @@
 import os
+import random
 import csv
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
+from torch.nn.modules.utils import _triple
+
+
+# Set rng seed
+def set_rng_seed(seed):
+	random.seed(seed)
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	torch.backends.cudnn.deterministic = True
+	torch.backends.cudnn.benchmark = False
 
 # Return formatted string with time information
 def format_time(seconds):
@@ -13,6 +25,16 @@ def format_time(seconds):
 # Convert dense-encoded vector to one-hot encoded
 def dense2onehot(tensor, n):
 	return torch.zeros(tensor.size(0), n, device=tensor.device).scatter_(1, tensor.unsqueeze(1).long(), 1)
+
+# Returns padding size corresponding to padding "same" for a given kernel size
+def get_padding_same(kernel_size):
+	kernel_size = _triple(kernel_size)
+	return [(k - 1) // 2 for k in kernel_size]
+
+# Returns output size after convolution
+def get_conv_output_size(input_size, kernel_size, stride=1, padding=0):
+	if padding == 'same': padding = get_padding_same(kernel_size)[0]
+	return ((input_size + 2*padding - kernel_size) // stride) + 1
 
 def update_param_stats(param_stats, new_stats):
 	for n, s in new_stats.items():
